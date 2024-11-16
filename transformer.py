@@ -6,8 +6,8 @@ from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 
-BATCH_SIZE = 100
-SEQ_LENGTH = 100
+BATCH_SIZE = 10
+SEQ_LENGTH = 10
 
 # Überprüfen, ob CUDA verfügbar ist
 if torch.cuda.is_available():
@@ -61,31 +61,77 @@ X_train = scaler.transform(X_train)
 X_test = normalizer.transform(X_test)
 X_test = scaler.transform(X_test)
 
-dataset = TimeSeriesDataset(X_train, seq_length=SEQ_LENGTH)
-dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
-dataloader_size = len(dataloader)
-dataloader_size_100 = dataloader_size // 100
+dataset_train = TimeSeriesDataset(X_train, seq_length=SEQ_LENGTH)
+dataloader_train = DataLoader(dataset_train, batch_size=BATCH_SIZE, shuffle=False)
+dataloader_train_size = len(dataloader_train)
+dataloader_train_size_100 = dataloader_train_size // 100
 
-# Training
-model = TransformerModel(input_dim=X_train.shape[1], model_dim=X_train.shape[1], num_heads=41, num_layers=8)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+dataset_test = TimeSeriesDataset(X_test, seq_length=1)
+dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False)
+dataloader_test_size = len(dataloader_train)
+dataloader_test_size_100 = dataloader_train_size // 100
+
+
 loss_fn = nn.MSELoss()
 
-model.to(device)
 
-for epoch in range(5):
-    for index, batch in enumerate(dataloader):
-        optimizer.zero_grad()
-        predictions = model(batch[0].to(device))
-        loss = loss_fn(predictions, batch[1].to(device))  # Vorhersage gegen Eingabe
-        loss.backward()
-        optimizer.step()
-        if index % dataloader_size_100 == 0:
-            print(f"Epoche: {epoch}:{index // dataloader_size_100}, Loss:{loss.item()}")
+# Training
+def train():
+    model = TransformerModel(input_dim=X_train.shape[1], model_dim=X_train.shape[1], num_heads=41, num_layers=2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-### Anomalieerkennung
-##for new_data in new_data_loader:
-##    predictions = model(new_data)
-##    prediction_error = calculate_error(predictions, new_data)
-##    if prediction_error > threshold:
-##        mark_as_anomaly(new_data)
+    model.to(device)
+
+    for epoch in range(3):
+        for index, batch in enumerate(dataloader_train):
+            optimizer.zero_grad()
+            predictions = model(batch[0].to(device)[0,:,:])
+            loss = loss_fn(predictions, batch[1].to(device))  # Vorhersage gegen Eingabe
+            loss.backward()
+            optimizer.step()
+            if index % dataloader_train_size_100 == 0:
+                print(f"Epoche: {epoch}:{index // dataloader_train_size_100}, Loss:{loss.item()}")
+                ##if (index // dataloader_train_size_100 > 5):
+                ##    break
+
+        torch.save(model, "./transformer")
+
+
+def predict():
+    model = torch.load("./transformer", weights_only=False)
+    model.eval()
+
+    loss_array = np.zeros(shape=(len(dataloader_test)), dtype=np.float32)
+    anomaly_array = np.zeros(shape=(len(dataloader_test)), dtype=np.int64)
+
+    for index, batch in enumerate(dataloader_test):
+        predictions = model(batch[0].to(device)[0,:,:])
+        loss = loss_fn(predictions, batch[1].to(device))
+        loss_array[index] = loss
+        if index > 0:
+            quantile_90 = np.percentile(loss_array[:index], 90)
+            anomaly_array[index] = 1 if loss > quantile_90 else 0
+        else:
+            anomaly_array[0] = 0
+
+        if((index+2) % 1000 == 0):
+            ##print(np.unique(anomaly_array[:index], return_counts=True))
+
+            y_part_test = y_test[:index]
+            y_predict = anomaly_array[:index]
+            accuracy = accuracy_score(y_part_test, y_predict)
+            f1 = f1_score(y_part_test, y_predict)
+            precision = precision_score(y_part_test, y_predict)
+            recall = recall_score(y_part_test, y_predict)
+            print(
+f"""
+Accuracy :  {accuracy}
+f1       :  {f1}
+precision:  {precision}
+recall   :  {recall}
+""")
+            print()
+
+
+##train()
+predict()
