@@ -14,6 +14,7 @@ class DataDisplay:
     def __init__(self, data_file):
         self.data = self.load_data(data_file)
         self.classifications = generate_binary_classifications(data_file)
+        print(self.classifications)
         self.display_window = None
         self.visualization_window = None
         
