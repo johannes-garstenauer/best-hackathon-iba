@@ -98,7 +98,7 @@ def train():
 
 
 def predict():
-    model = torch.load("./transformer_1", weights_only=False)
+    model = torch.load("./transformer", weights_only=False)
     model.eval()
 
     loss_array = np.zeros(shape=(len(dataloader_test)), dtype=np.float32)
@@ -133,5 +133,5 @@ recall   :  {recall}
             print()
 
 
-train()
-##predict()
+##train()
+predict()
